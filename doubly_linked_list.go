@@ -1,4 +1,4 @@
-package go_rate_limiter
+package ratelimiter
 
 import "errors"
 
