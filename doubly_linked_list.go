@@ -39,11 +39,11 @@ func (l *DoublyLinkedList) PushBack(v interface{}) {
 }
 
 func (l *DoublyLinkedList) PopFront() (interface{}, error) {
-	currentHead := l.head
-
-	if currentHead == nil {
+	if l.head == nil {
 		return nil, ErrListIsEmpty
 	}
+
+	currentHead := l.head
 
 	l.head = currentHead.next
 
