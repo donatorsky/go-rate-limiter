@@ -56,17 +56,19 @@ for i := 0; i < 12; i++ {
             // Return job result or error
             return currentRequestId, nil
         }).
-        OnSuccess(func(v interface{}) {
+        Then(func(value interface{}) (result interface{}, err error) {
             // In case Do() returned nil error
-            log.Printf("<- Request #%d: OnSuccess: %v\n", currentRequestId, v)
+            log.Printf("<- Request #%d: Then: %v\n", currentRequestId, v)
+
+            return nil, nil
         }).
-        OnFailure(func(err error) {
-            // In case Do() returned non-nil error
-            log.Printf("<- Request #%d: OnFailure: %v\n", currentRequestId, err)
+        Catch(func(reason error) {
+            // In case Do() or Then() returned non-nil error
+            log.Printf("<- Request #%d: Catch: %v\n", currentRequestId, reason)
         }).
-        OnComplete(func(v interface{}, err error) {
+        Finally(func() {
             // Always
-            //log.Printf("<- Request #%d: OnComplete: %v\n", currentRequestId, v)
+            //log.Printf("<- Request #%d: Finally: %v\n", currentRequestId, v)
 
             wg.Done()
         })
