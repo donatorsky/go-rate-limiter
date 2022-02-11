@@ -3,6 +3,8 @@ package ratelimiter
 import (
 	"sync"
 	"time"
+
+	"github.com/donatorsky/go-promise"
 )
 
 func NewRateLimiter(rate time.Duration, limit uint64) *RateLimiter {
@@ -21,8 +23,9 @@ func NewRateLimiter(rate time.Duration, limit uint64) *RateLimiter {
 type jobHandler func() (interface{}, error)
 
 type jobDefinition struct {
-	handler jobHandler
-	promise *Promise
+	handler        jobHandler
+	promise        promise.Promiser
+	processRequest chan bool
 }
 
 type RateLimiter struct {
@@ -86,13 +89,16 @@ func (sdk *RateLimiter) Finish() {
 	sdk.running = false
 }
 
-func (sdk *RateLimiter) Do(handler jobHandler) *Promise {
+func (sdk *RateLimiter) Do(handler jobHandler) promise.Promiser {
 	if !sdk.running {
 		panic("the worker has not been started yet")
 	}
 
-	newPromise := NewPromise().
-		OnComplete(func(_ interface{}, _ error) { sdk.release() })
+	newPromise := promise.Pending()
+
+	newPromise.Finally(func() {
+		sdk.release()
+	})
 
 	sdk.rw.Lock()
 	sdk.queue.PushBack(jobDefinition{
