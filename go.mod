@@ -3,7 +3,7 @@ module github.com/donatorsky/go-rate-limiter
 go 1.17
 
 require (
-	github.com/donatorsky/go-promise v0.1.4
+	github.com/donatorsky/go-promise v0.2.1
 	github.com/stretchr/testify v1.7.0
 )
 
