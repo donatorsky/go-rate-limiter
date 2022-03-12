@@ -2,7 +2,6 @@ name: Tests
 
 on:
   pull_request:
-  pull_request_target:
 
   push:
     branches:
@@ -40,8 +39,45 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
+      - uses: actions/cache@v2
+        id: mod-cache
+        with:
+          path: ~/go/pkg/mod
+          key: os-${{ matrix.operating-system }}-go-${{ hashFiles('**/go.mod', '**/go.sum') }}
+          restore-keys: os-${{ matrix.operating-system }}-go-
+
+      - name: Install dependencies
+        if: steps.mod-cache.outputs.cache-hit != 'true'
+        run: go mod download
+
+      - name: Run tests
+        run: go test ./...
+
+  code-coverage:
+    needs:
+      - test
+
+    runs-on: 'ubuntu-latest'
+    name: 'Code coverage'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: '1.17'
+
       - name: Install dependencies
         run: go mod download
 
-      - name: Test
-        run: go test ./...
+      - name: Calculate coverage
+        run: go test ./... -coverprofile=coverage.out -covermode=atomic
+
+      - uses: codecov/codecov-action@v2
+        with:
+          files: ./coverage.out
+          flags: unittests
+          fail_ci_if_error: true
+          verbose: false

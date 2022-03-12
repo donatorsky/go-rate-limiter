@@ -4,6 +4,7 @@ A Go's rate limiting package for asynchronous jobs.
 
 [![GitHub license](https://img.shields.io/github/license/donatorsky/go-rate-limiter)](https://github.com/donatorsky/go-rate-limiter/blob/main/LICENSE)
 [![Build](https://github.com/donatorsky/go-rate-limiter/workflows/Tests/badge.svg?branch=main)](https://github.com/donatorsky/go-rate-limiter/actions?query=branch%3Amain)
+[![codecov](https://codecov.io/gh/donatorsky/go-rate-limiter/branch/main/graph/badge.svg?token=A8WGM5K8DD)](https://codecov.io/gh/donatorsky/go-rate-limiter)
 
 ## What it does?
 
