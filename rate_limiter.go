@@ -38,7 +38,7 @@ type RateLimiter struct {
 	queue                   DoublyLinkedList
 	rateTicker              <-chan time.Time
 	worker                  chan jobDefinition
-	rw                      sync.RWMutex
+	mutex                   sync.RWMutex
 }
 
 func (sdk *RateLimiter) Rate() time.Duration {
@@ -100,19 +100,19 @@ func (sdk *RateLimiter) Do(handler jobHandler) promise.Promiser {
 		sdk.release()
 	})
 
-	sdk.rw.Lock()
+	sdk.mutex.Lock()
 	sdk.queue.PushBack(jobDefinition{
 		handler: handler,
 		promise: newPromise,
 	})
-	sdk.rw.Unlock()
+	sdk.mutex.Unlock()
 
 	return newPromise
 }
 
 func (sdk *RateLimiter) enqueue() {
-	sdk.rw.Lock()
-	defer sdk.rw.Unlock()
+	sdk.mutex.Lock()
+	defer sdk.mutex.Unlock()
 
 	if (sdk.alreadyProcessedCounter + sdk.inProgressCounter) >= sdk.limit {
 		return
@@ -141,11 +141,11 @@ func (sdk *RateLimiter) process(definition jobDefinition) {
 }
 
 func (sdk *RateLimiter) renew() {
-	sdk.rw.Lock()
+	sdk.mutex.Lock()
 
 	sdk.alreadyProcessedCounter = sdk.inProgressCounter
 
-	sdk.rw.Unlock()
+	sdk.mutex.Unlock()
 }
 
 func (sdk *RateLimiter) reserve() {
@@ -153,10 +153,10 @@ func (sdk *RateLimiter) reserve() {
 }
 
 func (sdk *RateLimiter) release() {
-	sdk.rw.Lock()
+	sdk.mutex.Lock()
 
 	sdk.inProgressCounter -= 1
 	sdk.alreadyProcessedCounter += 1
 
-	sdk.rw.Unlock()
+	sdk.mutex.Unlock()
 }
