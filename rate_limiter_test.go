@@ -62,40 +62,34 @@ func TestRateLimiter_Limit(t *testing.T) {
 }
 
 func TestRateLimiter_Begin(t *testing.T) {
-	t.SkipNow()
-	type fields struct {
-		rate                    time.Duration
-		limit                   uint64
-		inProgressCounter       uint64
-		alreadyProcessedCounter uint64
-		running                 bool
-		queue                   DoublyLinkedList
-		rateTicker              <-chan time.Time
-		worker                  chan jobDefinition
-		mutex                   sync.RWMutex
-	}
-	tests := []struct {
-		name   string
-		fields fields
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sdk := &RateLimiter{
-				rate:                    tt.fields.rate,
-				limit:                   tt.fields.limit,
-				inProgressCounter:       tt.fields.inProgressCounter,
-				alreadyProcessedCounter: tt.fields.alreadyProcessedCounter,
-				running:                 tt.fields.running,
-				queue:                   tt.fields.queue,
-				rateTicker:              tt.fields.rateTicker,
-				worker:                  tt.fields.worker,
-				mutex:                   tt.fields.mutex,
+	t.Run("Begin does not start the worker when one is already running", func(t *testing.T) {
+		limiter := RateLimiter{
+			running: true,
+			rate:    time.Minute,
 			}
-			sdk.Begin()
+
+		require.True(t, limiter.running)
+		require.Nil(t, limiter.rateTicker)
+
+		limiter.Begin()
+
+		require.True(t, limiter.running)
+		require.Nil(t, limiter.rateTicker)
 		})
+
+	t.Run("Begin starts the worker", func(t *testing.T) {
+		limiter := RateLimiter{
+			rate: time.Minute,
 	}
+
+		require.False(t, limiter.running)
+		require.Nil(t, limiter.rateTicker)
+
+		limiter.Begin()
+
+		require.True(t, limiter.running)
+		require.NotNil(t, limiter.rateTicker)
+	})
 }
 
 func TestRateLimiter_Do(t *testing.T) {
