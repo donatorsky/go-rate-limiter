@@ -1,12 +1,12 @@
 package ratelimiter
 
 import (
-	"reflect"
+	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/donatorsky/go-promise"
 	"github.com/jaswdr/faker"
 	"github.com/stretchr/testify/require"
 )
@@ -66,7 +66,7 @@ func TestRateLimiter_Begin(t *testing.T) {
 		limiter := RateLimiter{
 			running: true,
 			rate:    time.Minute,
-			}
+		}
 
 		require.True(t, limiter.running)
 		require.Nil(t, limiter.rateTicker)
@@ -75,12 +75,12 @@ func TestRateLimiter_Begin(t *testing.T) {
 
 		require.True(t, limiter.running)
 		require.Nil(t, limiter.rateTicker)
-		})
+	})
 
 	t.Run("Begin starts the worker", func(t *testing.T) {
 		limiter := RateLimiter{
 			rate: time.Minute,
-	}
+		}
 
 		require.False(t, limiter.running)
 		require.Nil(t, limiter.rateTicker)
@@ -93,47 +93,17 @@ func TestRateLimiter_Begin(t *testing.T) {
 }
 
 func TestRateLimiter_Do(t *testing.T) {
-	t.SkipNow()
-	type fields struct {
-		rate                    time.Duration
-		limit                   uint64
-		inProgressCounter       uint64
-		alreadyProcessedCounter uint64
-		running                 bool
-		queue                   DoublyLinkedList
-		rateTicker              <-chan time.Time
-		worker                  chan jobDefinition
-		mutex                   sync.RWMutex
-	}
-	type args struct {
-		handler jobHandler
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		args   args
-		want   promise.Promiser
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sdk := &RateLimiter{
-				rate:                    tt.fields.rate,
-				limit:                   tt.fields.limit,
-				inProgressCounter:       tt.fields.inProgressCounter,
-				alreadyProcessedCounter: tt.fields.alreadyProcessedCounter,
-				running:                 tt.fields.running,
-				queue:                   tt.fields.queue,
-				rateTicker:              tt.fields.rateTicker,
-				worker:                  tt.fields.worker,
-				mutex:                   tt.fields.mutex,
-			}
-			if got := sdk.Do(tt.args.handler); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Do() = %v, want %v", got, tt.want)
-			}
+	t.Run("Panics when worker is not started", func(t *testing.T) {
+		limiter := RateLimiter{
+			running: false,
+		}
+
+		require.PanicsWithValue(t, "the worker has not been started yet", func() {
+			limiter.Do(func() (interface{}, error) {
+				return nil, nil
+			})
 		})
-	}
+	})
 }
 
 func TestRateLimiter_Finish(t *testing.T) {
@@ -167,10 +137,177 @@ func TestRateLimiter_Finish(t *testing.T) {
 		rateLimiter.Finish()
 
 		require.False(t, rateLimiter.running)
-		require.Nil(t, rateLimiter.rateTicker)
+		require.Equal(t, rateTicker, rateLimiter.rateTicker)
 		_, bar := <-rateLimiter.worker
 		require.Equal(t, worker, rateLimiter.worker)
 		require.False(t, bar)
+	})
+}
+
+func TestRateLimiter(t *testing.T) {
+	t.Parallel()
+
+	fakerInstance := faker.New()
+
+	t.Run("Successful job returns resolved promise", func(t *testing.T) {
+		waitGroup := newWaitGroup()
+		callsStack := newCallsRegistry(2)
+
+		rateLimiter := NewRateLimiter(time.Second, 1)
+
+		rateLimiter.Begin()
+		waitGroup.Initialize("queue", 1)
+
+		resolutionValue := fakerInstance.Int()
+
+		promise := rateLimiter.Do(func() (interface{}, error) {
+			callsStack.Register("root")
+			waitGroup.Done("queue")
+
+			return resolutionValue, nil
+		})
+
+		promise.Then(func(value interface{}) (interface{}, error) {
+			require.Equal(t, resolutionValue, value)
+
+			callsStack.Register("success")
+
+			return nil, nil
+		})
+
+		promise.Catch(func(reason error) {
+			require.NoError(t, reason)
+
+			callsStack.Register("failure")
+		})
+
+		waitGroup.Wait("queue")
+		rateLimiter.Finish()
+
+		callsStack.AssertCompletedInOrder(t, []string{"root", "success"})
+	})
+
+	t.Run("Erroneous job returns rejected promise", func(t *testing.T) {
+		waitGroup := newWaitGroup()
+		callsStack := newCallsRegistry(2)
+
+		rateLimiter := NewRateLimiter(time.Second, 1)
+
+		rateLimiter.Begin()
+		waitGroup.Initialize("queue", 1)
+
+		failureReason := fakerInstance.Lorem().Sentence(6)
+
+		promise := rateLimiter.Do(func() (interface{}, error) {
+			callsStack.Register("root")
+			waitGroup.Done("queue")
+
+			return nil, errors.New(failureReason)
+		})
+
+		promise.Then(func(value interface{}) (interface{}, error) {
+			require.True(t, false, "Promise is expected to be rejected, but is resolved.")
+
+			callsStack.Register("success")
+
+			return nil, nil
+		})
+
+		promise.Catch(func(reason error) {
+			require.EqualError(t, reason, failureReason)
+
+			callsStack.Register("failure")
+		})
+
+		waitGroup.Wait("queue")
+		rateLimiter.Finish()
+
+		callsStack.AssertCompletedInOrder(t, []string{"root", "failure"})
+	})
+
+	t.Run("Jobs are executed sequentially when rate is 1 job/1s", func(t *testing.T) {
+		waitGroup := newWaitGroup()
+		callsStack := newCallsRegistry(3)
+
+		rateLimiter := NewRateLimiter(time.Second, 1)
+
+		rateLimiter.Begin()
+		waitGroup.Initialize("queue", 3)
+
+		jobsStarted := time.Now()
+
+		rateLimiter.Do(func() (interface{}, error) {
+			callsStack.Register(fmt.Sprintf("Job 1: %s", time.Now().Sub(jobsStarted).Truncate(time.Second).String()))
+			waitGroup.Done("queue")
+
+			return nil, nil
+		})
+
+		rateLimiter.Do(func() (interface{}, error) {
+			callsStack.Register(fmt.Sprintf("Job 1: %s", time.Now().Sub(jobsStarted).Truncate(time.Second).String()))
+			waitGroup.Done("queue")
+
+			return nil, nil
+		})
+
+		rateLimiter.Do(func() (interface{}, error) {
+			callsStack.Register(fmt.Sprintf("Job 1: %s", time.Now().Sub(jobsStarted).Truncate(time.Second).String()))
+			waitGroup.Done("queue")
+
+			return nil, nil
+		})
+
+		waitGroup.Wait("queue")
+		jobsFinished := time.Now()
+		rateLimiter.Finish()
+
+		require.GreaterOrEqual(t, jobsFinished.Sub(jobsStarted), time.Second*2)
+		callsStack.AssertCompletedInOrder(t, []string{"Job 1: 0s", "Job 1: 1s", "Job 1: 2s"})
+	})
+
+	t.Run("Jobs are executed in batches of 2 jobs/1s", func(t *testing.T) {
+		waitGroup := newWaitGroup()
+		callsStack := newCallsRegistry(3)
+
+		rateLimiter := NewRateLimiter(time.Second, 2)
+
+		waitGroup.
+			Initialize("batch-1", 2).
+			Initialize("batch-2", 1)
+
+		rateLimiter.Begin()
+		jobsStarted := time.Now()
+
+		rateLimiter.Do(func() (interface{}, error) {
+			time.Sleep(time.Millisecond * 500)
+			callsStack.Register(fmt.Sprintf("Job 1: %s", time.Now().Sub(jobsStarted).Truncate(time.Millisecond*500).String()))
+			waitGroup.Done("batch-1")
+
+			return nil, nil
+		})
+
+		rateLimiter.Do(func() (interface{}, error) {
+			callsStack.Register(fmt.Sprintf("Job 2: %s", time.Now().Sub(jobsStarted).Truncate(time.Millisecond*500).String()))
+			waitGroup.Done("batch-1")
+
+			return nil, nil
+		})
+
+		rateLimiter.Do(func() (interface{}, error) {
+			callsStack.Register(fmt.Sprintf("Job 3: %s", time.Now().Sub(jobsStarted).Truncate(time.Millisecond*500).String()))
+			waitGroup.Done("batch-2")
+
+			return nil, nil
+		})
+
+		waitGroup.Wait("batch-1")
+		callsStack.AssertCurrentCallsStackIs(t, []string{"Job 1: 500ms", "Job 2: 0s"})
+		waitGroup.Wait("batch-2")
+		jobsFinished := time.Now()
+		rateLimiter.Finish()
+
+		require.GreaterOrEqual(t, jobsFinished.Sub(jobsStarted), time.Second*1)
+		callsStack.AssertCompleted(t, []string{"Job 1: 500ms", "Job 2: 0s", "Job 3: 1s"})
 	})
 }
 

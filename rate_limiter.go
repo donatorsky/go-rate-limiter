@@ -50,6 +50,9 @@ func (sdk *RateLimiter) Limit() uint64 {
 }
 
 func (sdk *RateLimiter) Begin() {
+	sdk.mutex.Lock()
+	defer sdk.mutex.Unlock()
+
 	if sdk.running {
 		return
 	}
@@ -62,14 +65,22 @@ func (sdk *RateLimiter) Begin() {
 			case <-sdk.rateTicker:
 				sdk.renew()
 
-			case definition := <-sdk.worker:
-				go sdk.process(definition)
+			case definition, ok := <-sdk.worker:
+				if ok {
+					go sdk.process(definition)
+				}
 
 			default:
-				if sdk.rateTicker == nil {
+				sdk.mutex.Lock()
+
+				if !sdk.running {
+					sdk.rateTicker = nil
+					sdk.mutex.Unlock()
+
 					return
 				}
 
+				sdk.mutex.Unlock()
 				sdk.enqueue()
 			}
 		}
@@ -79,11 +90,13 @@ func (sdk *RateLimiter) Begin() {
 }
 
 func (sdk *RateLimiter) Finish() {
+	sdk.mutex.Lock()
+	defer sdk.mutex.Unlock()
+
 	if !sdk.running {
 		return
 	}
 
-	sdk.rateTicker = nil
 	close(sdk.worker)
 
 	sdk.running = false
