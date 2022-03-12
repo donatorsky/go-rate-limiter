@@ -156,7 +156,7 @@ func TestRateLimiter(t *testing.T) {
 		rateLimiter := NewRateLimiter(time.Second, 1)
 
 		rateLimiter.Begin()
-		waitGroup.Initialize("queue", 1)
+		waitGroup.Initialize("queue", 2)
 
 		resolutionValue := fakerInstance.Int()
 
@@ -171,6 +171,7 @@ func TestRateLimiter(t *testing.T) {
 			require.Equal(t, resolutionValue, value)
 
 			callsStack.Register("success")
+			waitGroup.Done("queue")
 
 			return nil, nil
 		})
@@ -179,6 +180,7 @@ func TestRateLimiter(t *testing.T) {
 			require.NoError(t, reason)
 
 			callsStack.Register("failure")
+			waitGroup.Done("queue")
 		})
 
 		waitGroup.Wait("queue")
@@ -194,7 +196,7 @@ func TestRateLimiter(t *testing.T) {
 		rateLimiter := NewRateLimiter(time.Second, 1)
 
 		rateLimiter.Begin()
-		waitGroup.Initialize("queue", 1)
+		waitGroup.Initialize("queue", 2)
 
 		failureReason := fakerInstance.Lorem().Sentence(6)
 
@@ -209,6 +211,7 @@ func TestRateLimiter(t *testing.T) {
 			require.True(t, false, "Promise is expected to be rejected, but is resolved.")
 
 			callsStack.Register("success")
+			waitGroup.Done("queue")
 
 			return nil, nil
 		})
@@ -217,6 +220,7 @@ func TestRateLimiter(t *testing.T) {
 			require.EqualError(t, reason, failureReason)
 
 			callsStack.Register("failure")
+			waitGroup.Done("queue")
 		})
 
 		waitGroup.Wait("queue")
