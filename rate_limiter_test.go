@@ -37,7 +37,9 @@ func TestRateLimiter_Rate(t *testing.T) {
 	t.Run("The rate may be received", func(t *testing.T) {
 		var rate = time.Duration(fakerInstance.Int64Between(1, 999999999))
 
-		limiter := NewRateLimiter(rate, 1)
+		limiter := RateLimiter{
+			rate: rate,
+		}
 
 		require.Equal(t, rate, limiter.rate)
 		require.Equal(t, rate, limiter.Rate())
@@ -50,7 +52,9 @@ func TestRateLimiter_Limit(t *testing.T) {
 	t.Run("The limit may be received", func(t *testing.T) {
 		var limit = uint64(fakerInstance.Int64Between(1, 999999999))
 
-		limiter := NewRateLimiter(time.Duration(fakerInstance.Int64Between(1, 999999999)), limit)
+		limiter := RateLimiter{
+			limit: limit,
+		}
 
 		require.Equal(t, limit, limiter.limit)
 		require.Equal(t, limit, limiter.Limit())
@@ -58,6 +62,7 @@ func TestRateLimiter_Limit(t *testing.T) {
 }
 
 func TestRateLimiter_Begin(t *testing.T) {
+	t.SkipNow()
 	type fields struct {
 		rate                    time.Duration
 		limit                   uint64
@@ -94,6 +99,7 @@ func TestRateLimiter_Begin(t *testing.T) {
 }
 
 func TestRateLimiter_Do(t *testing.T) {
+	t.SkipNow()
 	type fields struct {
 		rate                    time.Duration
 		limit                   uint64
@@ -137,42 +143,45 @@ func TestRateLimiter_Do(t *testing.T) {
 }
 
 func TestRateLimiter_Finish(t *testing.T) {
-	type fields struct {
-		rate                    time.Duration
-		limit                   uint64
-		inProgressCounter       uint64
-		alreadyProcessedCounter uint64
-		running                 bool
-		queue                   DoublyLinkedList
-		rateTicker              <-chan time.Time
-		worker                  chan jobDefinition
-		mutex                   sync.RWMutex
-	}
-	tests := []struct {
-		name   string
-		fields fields
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sdk := &RateLimiter{
-				rate:                    tt.fields.rate,
-				limit:                   tt.fields.limit,
-				inProgressCounter:       tt.fields.inProgressCounter,
-				alreadyProcessedCounter: tt.fields.alreadyProcessedCounter,
-				running:                 tt.fields.running,
-				queue:                   tt.fields.queue,
-				rateTicker:              tt.fields.rateTicker,
-				worker:                  tt.fields.worker,
-				mutex:                   tt.fields.mutex,
-			}
-			sdk.Finish()
-		})
-	}
+	t.Run("Already finished Rate Limiter is finished immediately", func(t *testing.T) {
+		rateTicker := make(<-chan time.Time, 1)
+		worker := make(chan jobDefinition, 1)
+
+		rateLimiter := RateLimiter{
+			running:    false,
+			rateTicker: rateTicker,
+			worker:     worker,
+		}
+
+		rateLimiter.Finish()
+
+		require.False(t, rateLimiter.running)
+		require.Equal(t, rateTicker, rateLimiter.rateTicker)
+		require.Equal(t, worker, rateLimiter.worker)
+	})
+
+	t.Run("Not finished Rate Limiter is finished properly", func(t *testing.T) {
+		rateTicker := make(<-chan time.Time, 1)
+		worker := make(chan jobDefinition, 1)
+
+		rateLimiter := RateLimiter{
+			running:    true,
+			rateTicker: rateTicker,
+			worker:     worker,
+		}
+
+		rateLimiter.Finish()
+
+		require.False(t, rateLimiter.running)
+		require.Nil(t, rateLimiter.rateTicker)
+		_, bar := <-rateLimiter.worker
+		require.Equal(t, worker, rateLimiter.worker)
+		require.False(t, bar)
+	})
 }
 
 func TestRateLimiter_enqueue(t *testing.T) {
+	t.SkipNow()
 	type fields struct {
 		rate                    time.Duration
 		limit                   uint64
@@ -209,6 +218,7 @@ func TestRateLimiter_enqueue(t *testing.T) {
 }
 
 func TestRateLimiter_process(t *testing.T) {
+	t.SkipNow()
 	type fields struct {
 		rate                    time.Duration
 		limit                   uint64
@@ -249,6 +259,7 @@ func TestRateLimiter_process(t *testing.T) {
 }
 
 func TestRateLimiter_release(t *testing.T) {
+	t.SkipNow()
 	type fields struct {
 		rate                    time.Duration
 		limit                   uint64
@@ -285,6 +296,7 @@ func TestRateLimiter_release(t *testing.T) {
 }
 
 func TestRateLimiter_renew(t *testing.T) {
+	t.SkipNow()
 	type fields struct {
 		rate                    time.Duration
 		limit                   uint64
@@ -321,6 +333,7 @@ func TestRateLimiter_renew(t *testing.T) {
 }
 
 func TestRateLimiter_reserve(t *testing.T) {
+	t.SkipNow()
 	type fields struct {
 		rate                    time.Duration
 		limit                   uint64
