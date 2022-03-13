@@ -51,6 +51,7 @@ jobs:
         run: go mod download
 
       - name: Run tests
+        timeout-minutes: 10
         run: go test ./...
 
   code-coverage:
@@ -73,6 +74,7 @@ jobs:
         run: go mod download
 
       - name: Calculate coverage
+        timeout-minutes: 10
         run: go test ./... -coverprofile=coverage.out -covermode=atomic
 
       - uses: codecov/codecov-action@v2

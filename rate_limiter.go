@@ -1,6 +1,8 @@
 package ratelimiter
 
 import (
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -15,7 +17,7 @@ func NewRateLimiter(rate time.Duration, limit uint64) *RateLimiter {
 	return &RateLimiter{
 		rate:   rate,
 		limit:  limit,
-		queue:  DoublyLinkedList{},
+		queue:  &DoublyLinkedList{},
 		worker: make(chan jobDefinition, limit),
 	}
 }
@@ -35,10 +37,10 @@ type RateLimiter struct {
 	inProgressCounter       uint64
 	alreadyProcessedCounter uint64
 	running                 bool
-	queue                   DoublyLinkedList
+	queue                   DoublyLinkedListInterface
 	rateTicker              <-chan time.Time
 	worker                  chan jobDefinition
-	rw                      sync.RWMutex
+	mutex                   sync.RWMutex
 }
 
 func (sdk *RateLimiter) Rate() time.Duration {
@@ -50,6 +52,9 @@ func (sdk *RateLimiter) Limit() uint64 {
 }
 
 func (sdk *RateLimiter) Begin() {
+	sdk.mutex.Lock()
+	defer sdk.mutex.Unlock()
+
 	if sdk.running {
 		return
 	}
@@ -62,13 +67,22 @@ func (sdk *RateLimiter) Begin() {
 			case <-sdk.rateTicker:
 				sdk.renew()
 
-			case definition := <-sdk.worker:
-				go sdk.process(definition)
+			case definition, ok := <-sdk.worker:
+				if ok {
+					go sdk.process(definition)
+				}
 
 			default:
-				if sdk.rateTicker == nil {
+				sdk.mutex.Lock()
+
+				if !sdk.running {
+					sdk.rateTicker = nil
+					sdk.mutex.Unlock()
+
 					return
 				}
+
+				sdk.mutex.Unlock()
 
 				sdk.enqueue()
 			}
@@ -79,55 +93,67 @@ func (sdk *RateLimiter) Begin() {
 }
 
 func (sdk *RateLimiter) Finish() {
+	sdk.mutex.Lock()
+	defer sdk.mutex.Unlock()
+
 	if !sdk.running {
 		return
 	}
 
-	sdk.rateTicker = nil
 	close(sdk.worker)
 
 	sdk.running = false
 }
 
 func (sdk *RateLimiter) Do(handler jobHandler) promise.Promiser {
+	sdk.mutex.RLock()
+
 	if !sdk.running {
+		sdk.mutex.RUnlock()
+
 		panic("the worker has not been started yet")
 	}
 
+	sdk.mutex.RUnlock()
+
 	newPromise := promise.Pending()
 
-	newPromise.Finally(func() {
-		sdk.release()
-	})
+	newPromise.Finally(sdk.release)
 
-	sdk.rw.Lock()
+	sdk.mutex.Lock()
 	sdk.queue.PushBack(jobDefinition{
 		handler: handler,
 		promise: newPromise,
 	})
-	sdk.rw.Unlock()
+	sdk.mutex.Unlock()
 
 	return newPromise
 }
 
 func (sdk *RateLimiter) enqueue() {
-	sdk.rw.Lock()
-	defer sdk.rw.Unlock()
+	sdk.mutex.Lock()
 
 	if (sdk.alreadyProcessedCounter + sdk.inProgressCounter) >= sdk.limit {
-		return
-	}
+		sdk.mutex.Unlock()
 
-	if sdk.queue.IsEmpty() {
 		return
 	}
 
 	x, err := sdk.queue.PopFront()
 	if err != nil {
-		return
+		defer sdk.mutex.Unlock()
+
+		if errors.Is(err, ErrListIsEmpty) {
+			return
+		}
+
+		// Currently, the ErrListIsEmpty error is the only error possible, but panic just in case it changed
+		panic(fmt.Errorf("unknown error when queuing next job: %w", err))
 	}
 
 	sdk.reserve()
+
+	sdk.mutex.Unlock()
 
 	sdk.worker <- x.(jobDefinition)
 }
@@ -141,11 +167,11 @@ func (sdk *RateLimiter) process(definition jobDefinition) {
 }
 
 func (sdk *RateLimiter) renew() {
-	sdk.rw.Lock()
+	sdk.mutex.Lock()
 
-	sdk.alreadyProcessedCounter = sdk.inProgressCounter
+	sdk.alreadyProcessedCounter = 0
 
-	sdk.rw.Unlock()
+	sdk.mutex.Unlock()
 }
 
 func (sdk *RateLimiter) reserve() {
@@ -153,10 +179,10 @@ func (sdk *RateLimiter) reserve() {
 }
 
 func (sdk *RateLimiter) release() {
-	sdk.rw.Lock()
+	sdk.mutex.Lock()
 
 	sdk.inProgressCounter -= 1
 	sdk.alreadyProcessedCounter += 1
 
-	sdk.rw.Unlock()
+	sdk.mutex.Unlock()
 }
