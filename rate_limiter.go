@@ -106,9 +106,15 @@ func (sdk *RateLimiter) Finish() {
 }
 
 func (sdk *RateLimiter) Do(handler jobHandler) promise.Promiser {
+	sdk.mutex.RLock()
+
 	if !sdk.running {
+		sdk.mutex.RUnlock()
+
 		panic("the worker has not been started yet")
 	}
+
+	sdk.mutex.RUnlock()
 
 	newPromise := promise.Pending()
 
@@ -163,7 +169,6 @@ func (sdk *RateLimiter) process(definition jobDefinition) {
 func (sdk *RateLimiter) renew() {
 	sdk.mutex.Lock()
 
-	//sdk.alreadyProcessedCounter = sdk.inProgressCounter
 	sdk.alreadyProcessedCounter = 0
 
 	sdk.mutex.Unlock()
