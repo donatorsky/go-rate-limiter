@@ -12,6 +12,12 @@ type item struct {
 	value interface{}
 }
 
+type DoublyLinkedListInterface interface {
+	PushBack(v interface{})
+	PopFront() (interface{}, error)
+	IsEmpty() bool
+}
+
 type DoublyLinkedList struct {
 	head *item
 	tail *item
@@ -39,7 +45,7 @@ func (l *DoublyLinkedList) PushBack(v interface{}) {
 }
 
 func (l *DoublyLinkedList) PopFront() (interface{}, error) {
-	if l.head == nil {
+	if l.IsEmpty() {
 		return nil, ErrListIsEmpty
 	}
 

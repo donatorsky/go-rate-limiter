@@ -1,6 +1,8 @@
 package ratelimiter
 
 import (
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -15,7 +17,7 @@ func NewRateLimiter(rate time.Duration, limit uint64) *RateLimiter {
 	return &RateLimiter{
 		rate:   rate,
 		limit:  limit,
-		queue:  DoublyLinkedList{},
+		queue:  &DoublyLinkedList{},
 		worker: make(chan jobDefinition, limit),
 	}
 }
@@ -35,7 +37,7 @@ type RateLimiter struct {
 	inProgressCounter       uint64
 	alreadyProcessedCounter uint64
 	running                 bool
-	queue                   DoublyLinkedList
+	queue                   DoublyLinkedListInterface
 	rateTicker              <-chan time.Time
 	worker                  chan jobDefinition
 	mutex                   sync.RWMutex
@@ -81,6 +83,7 @@ func (sdk *RateLimiter) Begin() {
 				}
 
 				sdk.mutex.Unlock()
+
 				sdk.enqueue()
 			}
 		}
@@ -109,9 +112,7 @@ func (sdk *RateLimiter) Do(handler jobHandler) promise.Promiser {
 
 	newPromise := promise.Pending()
 
-	newPromise.Finally(func() {
-		sdk.release()
-	})
+	newPromise.Finally(sdk.release)
 
 	sdk.mutex.Lock()
 	sdk.queue.PushBack(jobDefinition{
@@ -125,22 +126,28 @@ func (sdk *RateLimiter) Do(handler jobHandler) promise.Promiser {
 
 func (sdk *RateLimiter) enqueue() {
 	sdk.mutex.Lock()
-	defer sdk.mutex.Unlock()
 
 	if (sdk.alreadyProcessedCounter + sdk.inProgressCounter) >= sdk.limit {
-		return
-	}
+		sdk.mutex.Unlock()
 
-	if sdk.queue.IsEmpty() {
 		return
 	}
 
 	x, err := sdk.queue.PopFront()
 	if err != nil {
-		return
+		defer sdk.mutex.Unlock()
+
+		if errors.Is(err, ErrListIsEmpty) {
+			return
+		}
+
+		// Currently, the ErrListIsEmpty error is the only error possible, but panic just in case it changed
+		panic(fmt.Errorf("unknown error when queuing next job: %w", err))
 	}
 
 	sdk.reserve()
+
+	sdk.mutex.Unlock()
 
 	sdk.worker <- x.(jobDefinition)
 }
@@ -156,7 +163,8 @@ func (sdk *RateLimiter) process(definition jobDefinition) {
 func (sdk *RateLimiter) renew() {
 	sdk.mutex.Lock()
 
-	sdk.alreadyProcessedCounter = sdk.inProgressCounter
+	//sdk.alreadyProcessedCounter = sdk.inProgressCounter
+	sdk.alreadyProcessedCounter = 0
 
 	sdk.mutex.Unlock()
 }

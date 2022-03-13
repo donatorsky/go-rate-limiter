@@ -116,6 +116,9 @@ func (r *CallsRegistry) AssertCurrentCallsStackIs(t *testing.T, expectedRegistry
 }
 
 func (r *CallsRegistry) AssertCurrentCallsStackInOrderIs(t *testing.T, expectedRegistry []string) {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+
 	require.Equal(t, expectedRegistry, r.registry)
 }
 

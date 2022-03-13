@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jaswdr/faker"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -140,6 +141,37 @@ func TestRateLimiter_Finish(t *testing.T) {
 		_, bar := <-rateLimiter.worker
 		require.Equal(t, worker, rateLimiter.worker)
 		require.False(t, bar)
+	})
+}
+
+type doublyLinkedListMock struct {
+	mock.Mock
+}
+
+func (l *doublyLinkedListMock) PushBack(v interface{}) {
+	l.Called(v)
+}
+
+func (l *doublyLinkedListMock) PopFront() (interface{}, error) {
+	args := l.Called()
+	return args.Get(0), args.Error(1)
+}
+
+func (l *doublyLinkedListMock) IsEmpty() bool {
+	return l.Called().Bool(0)
+}
+
+func TestRateLimiter_enqueue(t *testing.T) {
+	t.Run("Panics when job cannot be queued", func(t *testing.T) {
+		queueMock := doublyLinkedListMock{}
+		queueMock.On("PopFront").Return(nil, errors.New("mocked error"))
+
+		rateLimiter := RateLimiter{
+			limit: 1,
+			queue: &queueMock,
+		}
+
+		require.PanicsWithError(t, "unknown error when queuing next job: mocked error", rateLimiter.enqueue)
 	})
 }
 
@@ -312,9 +344,54 @@ func TestRateLimiter(t *testing.T) {
 		require.GreaterOrEqual(t, jobsFinished.Sub(jobsStarted), time.Second*1)
 		callsStack.AssertCompleted(t, []string{"Job 1: true", "Job 2: true", "Job 3: true"})
 	})
+
+	t.Run("When job does not finish in one cycle, it is continued in the next cycle", func(t *testing.T) {
+		waitGroup := newWaitGroup()
+		callsStack := newCallsRegistry(3)
+
+		rateLimiter := NewRateLimiter(time.Second, 2)
+
+		waitGroup.
+			Initialize("batch-1", 2).
+			Initialize("batch-2", 1)
+
+		rateLimiter.Begin()
+		jobsStarted := time.Now()
+
+		rateLimiter.Do(func() (interface{}, error) {
+			time.Sleep(time.Millisecond * 1500)
+			callsStack.Register(fmt.Sprintf("Job 1: %t", lastedAtLeast(jobsStarted, time.Millisecond*1500)))
+			waitGroup.Done("batch-1")
+
+			return nil, nil
+		})
+
+		rateLimiter.Do(func() (interface{}, error) {
+			callsStack.Register(fmt.Sprintf("Job 2: %t", lastedAtLeast(jobsStarted, 0)))
+			waitGroup.Done("batch-1")
+
+			return nil, nil
+		})
+
+		rateLimiter.Do(func() (interface{}, error) {
+			callsStack.Register(fmt.Sprintf("Job 3: %t", lastedAtLeast(jobsStarted, time.Second)))
+			waitGroup.Done("batch-2")
+
+			return nil, nil
+		})
+
+		waitGroup.Wait("batch-2")
+		callsStack.AssertCurrentCallsStackInOrderIs(t, []string{"Job 2: true", "Job 3: true"})
+		waitGroup.Wait("batch-1")
+		jobsFinished := time.Now()
+		rateLimiter.Finish()
+
+		require.GreaterOrEqual(t, jobsFinished.Sub(jobsStarted), time.Second*1)
+		callsStack.AssertCompletedInOrder(t, []string{"Job 2: true", "Job 3: true", "Job 1: true"})
+	})
 }
 
 //TODO: Temporary measure, get rid when refactored to custom reset channel
 func lastedAtLeast(t time.Time, d time.Duration) bool {
-	return time.Now().Sub(t).Truncate(time.Millisecond) >= d
+	return time.Now().Sub(t) >= d
 }
