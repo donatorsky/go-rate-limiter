@@ -360,8 +360,8 @@ func TestRateLimiter(t *testing.T) {
 
 		rateLimiter.Do(func() (interface{}, error) {
 			time.Sleep(time.Millisecond * 1500)
-			waitGroup.Wait("batch-2") // Make sure this job is executed after job#3 and skips 1s cycle
 			callsStack.Register(fmt.Sprintf("Job 1: %t", lastedAtLeast(jobsStarted, time.Millisecond*1500)))
+			waitGroup.Wait("batch-2") // Make sure this job is executed after job#3 and skips 1s cycle
 			waitGroup.Done("batch-1")
 
 			return nil, nil
