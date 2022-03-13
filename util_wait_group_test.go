@@ -5,17 +5,17 @@ import (
 	"sync"
 )
 
-func newWaitGroup() WaitGroup {
-	return WaitGroup{
+func newWaitGroup() waitGroup {
+	return waitGroup{
 		waitGroups: make(map[string]*sync.WaitGroup),
 	}
 }
 
-type WaitGroup struct {
+type waitGroup struct {
 	waitGroups map[string]*sync.WaitGroup
 }
 
-func (wg *WaitGroup) Initialize(key string, initialDelta int) *WaitGroup {
+func (wg *waitGroup) Initialize(key string, initialDelta int) *waitGroup {
 	if _, exists := wg.waitGroups[key]; exists {
 		return wg
 	}
@@ -27,7 +27,7 @@ func (wg *WaitGroup) Initialize(key string, initialDelta int) *WaitGroup {
 	return wg
 }
 
-func (wg *WaitGroup) Add(key string, delta int) {
+func (wg *waitGroup) Add(key string, delta int) {
 	if selectedWaitGroup, exists := wg.waitGroups[key]; exists {
 		selectedWaitGroup.Add(delta)
 	} else {
@@ -35,7 +35,7 @@ func (wg *WaitGroup) Add(key string, delta int) {
 	}
 }
 
-func (wg *WaitGroup) Wait(key string) {
+func (wg *waitGroup) Wait(key string) {
 	if selectedWaitGroup, exists := wg.waitGroups[key]; exists {
 		selectedWaitGroup.Wait()
 	} else {
@@ -43,7 +43,7 @@ func (wg *WaitGroup) Wait(key string) {
 	}
 }
 
-func (wg *WaitGroup) Done(key string) {
+func (wg *waitGroup) Done(key string) {
 	if selectedWaitGroup, exists := wg.waitGroups[key]; exists {
 		selectedWaitGroup.Done()
 	} else {

@@ -11,20 +11,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newCallsRegistry(expectedCalls uint) CallsRegistry {
-	return CallsRegistry{
+func newCallsRegistry(expectedCalls uint) callsRegistry {
+	return callsRegistry{
 		expectedCalls: expectedCalls,
 	}
 }
 
-type CallsRegistry struct {
+type callsRegistry struct {
 	mutex sync.RWMutex
 
 	registry      []string
 	expectedCalls uint
 }
 
-func (r *CallsRegistry) Register(place string) {
+func (r *callsRegistry) Register(place string) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
@@ -39,14 +39,14 @@ func (r *CallsRegistry) Register(place string) {
 	r.registry = append(r.registry, place)
 }
 
-func (r *CallsRegistry) Summarize() string {
+func (r *callsRegistry) Summarize() string {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 
 	return strings.Join(r.registry, "|")
 }
 
-func (r *CallsRegistry) AssertCompletedBefore(t *testing.T, expectedRegistry []string, timeLimit time.Duration) {
+func (r *callsRegistry) AssertCompletedBefore(t *testing.T, expectedRegistry []string, timeLimit time.Duration) {
 	sort.Strings(expectedRegistry)
 
 	r.assertCallsStacksAreSameBefore(t, func() ([]string, []string) {
@@ -61,14 +61,14 @@ func (r *CallsRegistry) AssertCompletedBefore(t *testing.T, expectedRegistry []s
 	}, timeLimit)
 }
 
-func (r *CallsRegistry) AssertCompletedInOrder(t *testing.T, expectedRegistry []string) {
+func (r *callsRegistry) AssertCompletedInOrder(t *testing.T, expectedRegistry []string) {
 	r.assertCallsStacksAreSame(
 		t,
 		func() ([]string, []string) { return expectedRegistry, r.registry },
 	)
 }
 
-func (r *CallsRegistry) AssertCompleted(t *testing.T, expectedRegistry []string) {
+func (r *callsRegistry) AssertCompleted(t *testing.T, expectedRegistry []string) {
 	r.assertCallsStacksAreSame(
 		t,
 		func() ([]string, []string) {
@@ -84,7 +84,7 @@ func (r *CallsRegistry) AssertCompleted(t *testing.T, expectedRegistry []string)
 	)
 }
 
-func (r *CallsRegistry) AssertCompletedInOrderBefore(t *testing.T, expectedRegistry []string, timeLimit time.Duration) {
+func (r *callsRegistry) AssertCompletedInOrderBefore(t *testing.T, expectedRegistry []string, timeLimit time.Duration) {
 	r.assertCallsStacksAreSameBefore(
 		t,
 		func() ([]string, []string) { return expectedRegistry, r.registry },
@@ -92,12 +92,12 @@ func (r *CallsRegistry) AssertCompletedInOrderBefore(t *testing.T, expectedRegis
 	)
 }
 
-func (r *CallsRegistry) AssertCompletedCallsStackIsEmpty(t *testing.T) {
+func (r *callsRegistry) AssertCompletedCallsStackIsEmpty(t *testing.T) {
 	require.Empty(t, r.registry)
 	r.AssertCurrentCallsStackIsEmpty(t)
 }
 
-func (r *CallsRegistry) AssertCurrentCallsStackIs(t *testing.T, expectedRegistry []string) {
+func (r *callsRegistry) AssertCurrentCallsStackIs(t *testing.T, expectedRegistry []string) {
 	if nil == expectedRegistry {
 		require.Empty(t, r.registry)
 
@@ -115,31 +115,31 @@ func (r *CallsRegistry) AssertCurrentCallsStackIs(t *testing.T, expectedRegistry
 	require.Equal(t, expectedRegistry, currentRegistry)
 }
 
-func (r *CallsRegistry) AssertCurrentCallsStackInOrderIs(t *testing.T, expectedRegistry []string) {
+func (r *callsRegistry) AssertCurrentCallsStackInOrderIs(t *testing.T, expectedRegistry []string) {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 
 	require.Equal(t, expectedRegistry, r.registry)
 }
 
-func (r *CallsRegistry) AssertCurrentCallsStackIsEmpty(t *testing.T) {
+func (r *callsRegistry) AssertCurrentCallsStackIsEmpty(t *testing.T) {
 	r.AssertCurrentCallsStackIs(t, nil)
 }
 
-func (r *CallsRegistry) AssertThereAreNCallsLeft(t *testing.T, numberOfCallsLeft uint) {
+func (r *callsRegistry) AssertThereAreNCallsLeft(t *testing.T, numberOfCallsLeft uint) {
 	numberOfCurrentCalls := uint(len(r.registry))
 
 	require.LessOrEqual(t, numberOfCurrentCalls, r.expectedCalls)
 	require.Equal(t, numberOfCallsLeft, r.expectedCalls-numberOfCurrentCalls)
 }
 
-func (r *CallsRegistry) assertCallsStacksAreSame(t *testing.T, h func() ([]string, []string)) {
+func (r *callsRegistry) assertCallsStacksAreSame(t *testing.T, h func() ([]string, []string)) {
 	expectedRegistry, currentRegistry := h()
 
 	require.Equal(t, expectedRegistry, currentRegistry)
 }
 
-func (r *CallsRegistry) assertCallsStacksAreSameBefore(t *testing.T, h func() ([]string, []string), timeLimit time.Duration) {
+func (r *callsRegistry) assertCallsStacksAreSameBefore(t *testing.T, h func() ([]string, []string), timeLimit time.Duration) {
 	timeLimiter := time.After(timeLimit)
 
 	for {

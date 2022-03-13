@@ -361,10 +361,10 @@ func TestRateLimiter(t *testing.T) {
 
 		rateLimiter.Do(func() (interface{}, error) {
 			time.Sleep(time.Millisecond * 1500)
-			callsStack.Register(fmt.Sprintf("Job 1: %t", lastedAtLeast(jobsStarted, time.Millisecond*1500)))
 			waitGroup.Wait("batch-2") // Make sure this job is executed after job#3 and skips 1s cycle
+			waitGroup.Wait("batch-2-check")
+			callsStack.Register(fmt.Sprintf("Job 1: %t", lastedAtLeast(jobsStarted, time.Millisecond*1500)))
 			waitGroup.Done("batch-1")
-			waitGroup.Done("batch-2-check")
 
 			return nil, nil
 		})
@@ -379,13 +379,13 @@ func TestRateLimiter(t *testing.T) {
 		rateLimiter.Do(func() (interface{}, error) {
 			callsStack.Register(fmt.Sprintf("Job 3: %t", lastedAtLeast(jobsStarted, time.Second)))
 			waitGroup.Done("batch-2")
+			waitGroup.Done("batch-2-check")
 
 			return nil, nil
 		})
 
 		waitGroup.Wait("batch-2")
 		callsStack.AssertCurrentCallsStackInOrderIs(t, []string{"Job 2: true", "Job 3: true"})
-		waitGroup.Wait("batch-2-check")
 		waitGroup.Wait("batch-1")
 		jobsFinished := time.Now()
 		rateLimiter.Finish()
