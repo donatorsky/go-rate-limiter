@@ -3,7 +3,6 @@ package ratelimiter
 import (
 	"errors"
 	"fmt"
-	"sync"
 	"testing"
 	"time"
 
@@ -241,21 +240,21 @@ func TestRateLimiter(t *testing.T) {
 		jobsStarted := time.Now()
 
 		rateLimiter.Do(func() (interface{}, error) {
-			callsStack.Register(fmt.Sprintf("Job 1: %s", time.Now().Sub(jobsStarted).Truncate(time.Second).String()))
+			callsStack.Register(fmt.Sprintf("Job 1: %t", lastedAtLeast(jobsStarted, 0)))
 			waitGroup.Done("queue")
 
 			return nil, nil
 		})
 
 		rateLimiter.Do(func() (interface{}, error) {
-			callsStack.Register(fmt.Sprintf("Job 1: %s", time.Now().Sub(jobsStarted).Truncate(time.Second).String()))
+			callsStack.Register(fmt.Sprintf("Job 1: %t", lastedAtLeast(jobsStarted, time.Second)))
 			waitGroup.Done("queue")
 
 			return nil, nil
 		})
 
 		rateLimiter.Do(func() (interface{}, error) {
-			callsStack.Register(fmt.Sprintf("Job 1: %s", time.Now().Sub(jobsStarted).Truncate(time.Second).String()))
+			callsStack.Register(fmt.Sprintf("Job 1: %t", lastedAtLeast(jobsStarted, time.Second*2)))
 			waitGroup.Done("queue")
 
 			return nil, nil
@@ -266,7 +265,7 @@ func TestRateLimiter(t *testing.T) {
 		rateLimiter.Finish()
 
 		require.GreaterOrEqual(t, jobsFinished.Sub(jobsStarted), time.Second*2)
-		callsStack.AssertCompletedInOrder(t, []string{"Job 1: 0s", "Job 1: 1s", "Job 1: 2s"})
+		callsStack.AssertCompletedInOrder(t, []string{"Job 1: true", "Job 1: true", "Job 1: true"})
 	})
 
 	t.Run("Jobs are executed in batches of 2 jobs/1s", func(t *testing.T) {
@@ -284,222 +283,38 @@ func TestRateLimiter(t *testing.T) {
 
 		rateLimiter.Do(func() (interface{}, error) {
 			time.Sleep(time.Millisecond * 500)
-			callsStack.Register(fmt.Sprintf("Job 1: %s", time.Now().Sub(jobsStarted).Truncate(time.Millisecond*500).String()))
+			callsStack.Register(fmt.Sprintf("Job 1: %t", lastedAtLeast(jobsStarted, time.Millisecond*500)))
 			waitGroup.Done("batch-1")
 
 			return nil, nil
 		})
 
 		rateLimiter.Do(func() (interface{}, error) {
-			callsStack.Register(fmt.Sprintf("Job 2: %s", time.Now().Sub(jobsStarted).Truncate(time.Millisecond*500).String()))
+			callsStack.Register(fmt.Sprintf("Job 2: %t", lastedAtLeast(jobsStarted, 0)))
 			waitGroup.Done("batch-1")
 
 			return nil, nil
 		})
 
 		rateLimiter.Do(func() (interface{}, error) {
-			callsStack.Register(fmt.Sprintf("Job 3: %s", time.Now().Sub(jobsStarted).Truncate(time.Millisecond*500).String()))
+			callsStack.Register(fmt.Sprintf("Job 3: %t", lastedAtLeast(jobsStarted, time.Second)))
 			waitGroup.Done("batch-2")
 
 			return nil, nil
 		})
 
 		waitGroup.Wait("batch-1")
-		callsStack.AssertCurrentCallsStackIs(t, []string{"Job 1: 500ms", "Job 2: 0s"})
+		callsStack.AssertCurrentCallsStackIs(t, []string{"Job 1: true", "Job 2: true"})
 		waitGroup.Wait("batch-2")
 		jobsFinished := time.Now()
 		rateLimiter.Finish()
 
 		require.GreaterOrEqual(t, jobsFinished.Sub(jobsStarted), time.Second*1)
-		callsStack.AssertCompleted(t, []string{"Job 1: 500ms", "Job 2: 0s", "Job 3: 1s"})
+		callsStack.AssertCompleted(t, []string{"Job 1: true", "Job 2: true", "Job 3: true"})
 	})
 }
 
-func TestRateLimiter_enqueue(t *testing.T) {
-	t.SkipNow()
-	type fields struct {
-		rate                    time.Duration
-		limit                   uint64
-		inProgressCounter       uint64
-		alreadyProcessedCounter uint64
-		running                 bool
-		queue                   DoublyLinkedList
-		rateTicker              <-chan time.Time
-		worker                  chan jobDefinition
-		mutex                   sync.RWMutex
-	}
-	tests := []struct {
-		name   string
-		fields fields
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sdk := &RateLimiter{
-				rate:                    tt.fields.rate,
-				limit:                   tt.fields.limit,
-				inProgressCounter:       tt.fields.inProgressCounter,
-				alreadyProcessedCounter: tt.fields.alreadyProcessedCounter,
-				running:                 tt.fields.running,
-				queue:                   tt.fields.queue,
-				rateTicker:              tt.fields.rateTicker,
-				worker:                  tt.fields.worker,
-				mutex:                   tt.fields.mutex,
-			}
-			sdk.enqueue()
-		})
-	}
-}
-
-func TestRateLimiter_process(t *testing.T) {
-	t.SkipNow()
-	type fields struct {
-		rate                    time.Duration
-		limit                   uint64
-		inProgressCounter       uint64
-		alreadyProcessedCounter uint64
-		running                 bool
-		queue                   DoublyLinkedList
-		rateTicker              <-chan time.Time
-		worker                  chan jobDefinition
-		mutex                   sync.RWMutex
-	}
-	type args struct {
-		definition jobDefinition
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		args   args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sdk := &RateLimiter{
-				rate:                    tt.fields.rate,
-				limit:                   tt.fields.limit,
-				inProgressCounter:       tt.fields.inProgressCounter,
-				alreadyProcessedCounter: tt.fields.alreadyProcessedCounter,
-				running:                 tt.fields.running,
-				queue:                   tt.fields.queue,
-				rateTicker:              tt.fields.rateTicker,
-				worker:                  tt.fields.worker,
-				mutex:                   tt.fields.mutex,
-			}
-			sdk.process(tt.args.definition)
-		})
-	}
-}
-
-func TestRateLimiter_release(t *testing.T) {
-	t.SkipNow()
-	type fields struct {
-		rate                    time.Duration
-		limit                   uint64
-		inProgressCounter       uint64
-		alreadyProcessedCounter uint64
-		running                 bool
-		queue                   DoublyLinkedList
-		rateTicker              <-chan time.Time
-		worker                  chan jobDefinition
-		mutex                   sync.RWMutex
-	}
-	tests := []struct {
-		name   string
-		fields fields
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sdk := &RateLimiter{
-				rate:                    tt.fields.rate,
-				limit:                   tt.fields.limit,
-				inProgressCounter:       tt.fields.inProgressCounter,
-				alreadyProcessedCounter: tt.fields.alreadyProcessedCounter,
-				running:                 tt.fields.running,
-				queue:                   tt.fields.queue,
-				rateTicker:              tt.fields.rateTicker,
-				worker:                  tt.fields.worker,
-				mutex:                   tt.fields.mutex,
-			}
-			sdk.release()
-		})
-	}
-}
-
-func TestRateLimiter_renew(t *testing.T) {
-	t.SkipNow()
-	type fields struct {
-		rate                    time.Duration
-		limit                   uint64
-		inProgressCounter       uint64
-		alreadyProcessedCounter uint64
-		running                 bool
-		queue                   DoublyLinkedList
-		rateTicker              <-chan time.Time
-		worker                  chan jobDefinition
-		mutex                   sync.RWMutex
-	}
-	tests := []struct {
-		name   string
-		fields fields
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sdk := &RateLimiter{
-				rate:                    tt.fields.rate,
-				limit:                   tt.fields.limit,
-				inProgressCounter:       tt.fields.inProgressCounter,
-				alreadyProcessedCounter: tt.fields.alreadyProcessedCounter,
-				running:                 tt.fields.running,
-				queue:                   tt.fields.queue,
-				rateTicker:              tt.fields.rateTicker,
-				worker:                  tt.fields.worker,
-				mutex:                   tt.fields.mutex,
-			}
-			sdk.renew()
-		})
-	}
-}
-
-func TestRateLimiter_reserve(t *testing.T) {
-	t.SkipNow()
-	type fields struct {
-		rate                    time.Duration
-		limit                   uint64
-		inProgressCounter       uint64
-		alreadyProcessedCounter uint64
-		running                 bool
-		queue                   DoublyLinkedList
-		rateTicker              <-chan time.Time
-		worker                  chan jobDefinition
-		mutex                   sync.RWMutex
-	}
-	tests := []struct {
-		name   string
-		fields fields
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sdk := &RateLimiter{
-				rate:                    tt.fields.rate,
-				limit:                   tt.fields.limit,
-				inProgressCounter:       tt.fields.inProgressCounter,
-				alreadyProcessedCounter: tt.fields.alreadyProcessedCounter,
-				running:                 tt.fields.running,
-				queue:                   tt.fields.queue,
-				rateTicker:              tt.fields.rateTicker,
-				worker:                  tt.fields.worker,
-				mutex:                   tt.fields.mutex,
-			}
-			sdk.reserve()
-		})
-	}
+//TODO: Temporary measure, get rid when refactored to custom reset channel
+func lastedAtLeast(t time.Time, d time.Duration) bool {
+	return time.Now().Sub(t).Truncate(time.Millisecond) >= d
 }
