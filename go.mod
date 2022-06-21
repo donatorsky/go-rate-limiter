@@ -5,6 +5,5 @@ go 1.13
 require (
 	github.com/donatorsky/go-promise v0.2.3
 	github.com/jaswdr/faker v1.10.2
-	github.com/stretchr/objx v0.3.0 // indirect
-	github.com/stretchr/testify v1.7.2
+	github.com/stretchr/testify v1.7.4
 )
