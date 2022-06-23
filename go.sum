@@ -4,8 +4,8 @@ github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSs
 github.com/donatorsky/go-promise v0.2.3 h1:D6dLRLI8UHB1dc0x0YT+uaCNXttunMsdNJyhZvEEJ14=
 github.com/donatorsky/go-promise v0.2.3/go.mod h1:uOTkguCb9pxqesZyRiFZjITIDQXkq526M4iUVztDtkI=
 github.com/jaswdr/faker v1.10.2/go.mod h1:x7ZlyB1AZqwqKZgyQlnqEG8FDptmHlncA5u2zY/yi6w=
-github.com/jaswdr/faker v1.11.0 h1:KDinCW79hpDuY3tSKtPyrNy/50YZzrGxHsWqlmGqYi8=
-github.com/jaswdr/faker v1.11.0/go.mod h1:x7ZlyB1AZqwqKZgyQlnqEG8FDptmHlncA5u2zY/yi6w=
+github.com/jaswdr/faker v1.11.1 h1:4wRI09n5+YrewFLog2vEV0bIXHx75F0KHcjvA4ecCPY=
+github.com/jaswdr/faker v1.11.1/go.mod h1:x7ZlyB1AZqwqKZgyQlnqEG8FDptmHlncA5u2zY/yi6w=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
