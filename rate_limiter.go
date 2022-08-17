@@ -7,17 +7,19 @@ import (
 	"time"
 
 	"github.com/donatorsky/go-promise"
+	"github.com/donatorsky/go-rate-limiter/internal"
+	tickers "github.com/donatorsky/go-rate-limiter/ticker"
 )
 
-func NewRateLimiter(rate time.Duration, limit uint64) *RateLimiter {
+func NewRateLimiter(ticker tickers.Ticker, limit uint64) *RateLimiter {
 	if limit < 1 {
 		panic("limit cannot be less than 1")
 	}
 
 	return &RateLimiter{
-		rate:   rate,
 		limit:  limit,
-		queue:  &DoublyLinkedList{},
+		ticker: ticker,
+		queue:  &internal.DoublyLinkedList{},
 		worker: make(chan jobDefinition, limit),
 	}
 }
@@ -30,21 +32,20 @@ type jobDefinition struct {
 	processRequest chan bool
 }
 
+//go:generate moq -out ticker_moq_test.go . ticker
+type ticker = tickers.Ticker
+
 type RateLimiter struct {
-	rate  time.Duration
 	limit uint64
 
 	inProgressCounter       uint64
 	alreadyProcessedCounter uint64
 	running                 bool
-	queue                   DoublyLinkedListInterface
-	rateTicker              <-chan time.Time
+	queue                   internal.DoublyLinkedListInterface
+	ticks                   <-chan time.Time
+	ticker                  ticker
 	worker                  chan jobDefinition
 	mutex                   sync.RWMutex
-}
-
-func (sdk *RateLimiter) Rate() time.Duration {
-	return sdk.rate
 }
 
 func (sdk *RateLimiter) Limit() uint64 {
@@ -59,12 +60,12 @@ func (sdk *RateLimiter) Begin() {
 		return
 	}
 
-	sdk.rateTicker = time.Tick(sdk.rate)
+	sdk.ticks = sdk.ticker.Init()
 
 	go func() {
 		for {
 			select {
-			case <-sdk.rateTicker:
+			case <-sdk.ticks:
 				sdk.renew()
 
 			case definition, ok := <-sdk.worker:
@@ -76,7 +77,7 @@ func (sdk *RateLimiter) Begin() {
 				sdk.mutex.Lock()
 
 				if !sdk.running {
-					sdk.rateTicker = nil
+					sdk.ticks = nil
 					sdk.mutex.Unlock()
 
 					return
@@ -143,7 +144,7 @@ func (sdk *RateLimiter) enqueue() {
 	if err != nil {
 		defer sdk.mutex.Unlock()
 
-		if errors.Is(err, ErrListIsEmpty) {
+		if errors.Is(err, internal.ErrListIsEmpty) {
 			return
 		}
 
