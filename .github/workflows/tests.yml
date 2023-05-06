@@ -41,17 +41,6 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
-      - uses: actions/cache@v3
-        id: mod-cache
-        with:
-          path: ~/go/pkg/mod
-          key: os-${{ matrix.operating-system }}-go-${{ hashFiles('**/go.mod', '**/go.sum') }}
-          restore-keys: os-${{ matrix.operating-system }}-go-
-
-      - name: Install dependencies
-        if: steps.mod-cache.outputs.cache-hit != 'true'
-        run: go mod download
-
       - name: Run tests
         timeout-minutes: 10
         run: go test ./...
