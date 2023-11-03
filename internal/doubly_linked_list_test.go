@@ -1,4 +1,4 @@
-package ratelimiter
+package internal
 
 import (
 	"testing"

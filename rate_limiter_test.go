@@ -6,43 +6,27 @@ import (
 	"testing"
 	"time"
 
+	tickers "github.com/donatorsky/go-rate-limiter/ticker"
 	"github.com/jaswdr/faker"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
 func TestNewRateLimiter(t *testing.T) {
-	fakerInstance := faker.New()
-
 	t.Run("Rate limiter cannot be constructed with limit less than 1", func(t *testing.T) {
 		require.PanicsWithValue(t, "limit cannot be less than 1", func() {
-			NewRateLimiter(time.Duration(fakerInstance.Int64Between(1, 999999999)), 0)
+			NewRateLimiter(nil, 0)
 		})
 	})
 
 	t.Run("Rate limiter can be constructed with limit equal 1", func(t *testing.T) {
-		var rate = time.Duration(fakerInstance.Int64Between(1, 999999999))
+		tickerMoq := &tickerMock{}
 
-		limiter := NewRateLimiter(rate, 1)
+		limiter := NewRateLimiter(tickerMoq, 1)
 
-		require.Equal(t, rate, limiter.rate)
+		require.Same(t, tickerMoq, limiter.ticker)
 		require.Equal(t, uint64(1), limiter.limit)
 		require.False(t, limiter.running)
-	})
-}
-
-func TestRateLimiter_Rate(t *testing.T) {
-	fakerInstance := faker.New()
-
-	t.Run("The rate may be received", func(t *testing.T) {
-		var rate = time.Duration(fakerInstance.Int64Between(1, 999999999))
-
-		limiter := RateLimiter{
-			rate: rate,
-		}
-
-		require.Equal(t, rate, limiter.rate)
-		require.Equal(t, rate, limiter.Rate())
 	})
 }
 
@@ -63,32 +47,44 @@ func TestRateLimiter_Limit(t *testing.T) {
 
 func TestRateLimiter_Begin(t *testing.T) {
 	t.Run("Begin does not start the worker when one is already running", func(t *testing.T) {
+		tickerMoq := tickerMock{}
+
 		limiter := RateLimiter{
 			running: true,
-			rate:    time.Minute,
+			ticker:  &tickerMoq,
 		}
 
 		require.True(t, limiter.running)
-		require.Nil(t, limiter.rateTicker)
+		require.Nil(t, limiter.ticks)
 
 		limiter.Begin()
 
 		require.True(t, limiter.running)
-		require.Nil(t, limiter.rateTicker)
+		require.Nil(t, limiter.ticks)
+		require.Len(t, tickerMoq.InitCalls(), 0)
 	})
 
 	t.Run("Begin starts the worker", func(t *testing.T) {
+		var ticker = make(<-chan time.Time)
+
+		tickerMoq := tickerMock{
+			InitFunc: func() <-chan time.Time {
+				return ticker
+			},
+		}
+
 		limiter := RateLimiter{
-			rate: time.Minute,
+			ticker: &tickerMoq,
 		}
 
 		require.False(t, limiter.running)
-		require.Nil(t, limiter.rateTicker)
+		require.Nil(t, limiter.ticks)
 
 		limiter.Begin()
 
 		require.True(t, limiter.running)
-		require.NotNil(t, limiter.rateTicker)
+		require.Equal(t, ticker, limiter.ticks)
+		require.Len(t, tickerMoq.InitCalls(), 1)
 	})
 }
 
@@ -112,15 +108,15 @@ func TestRateLimiter_Finish(t *testing.T) {
 		worker := make(chan jobDefinition, 1)
 
 		rateLimiter := RateLimiter{
-			running:    false,
-			rateTicker: rateTicker,
-			worker:     worker,
+			running: false,
+			ticks:   rateTicker,
+			worker:  worker,
 		}
 
 		rateLimiter.Finish()
 
 		require.False(t, rateLimiter.running)
-		require.Equal(t, rateTicker, rateLimiter.rateTicker)
+		require.Equal(t, rateTicker, rateLimiter.ticks)
 		require.Equal(t, worker, rateLimiter.worker)
 	})
 
@@ -129,15 +125,15 @@ func TestRateLimiter_Finish(t *testing.T) {
 		worker := make(chan jobDefinition, 1)
 
 		rateLimiter := RateLimiter{
-			running:    true,
-			rateTicker: rateTicker,
-			worker:     worker,
+			running: true,
+			ticks:   rateTicker,
+			worker:  worker,
 		}
 
 		rateLimiter.Finish()
 
 		require.False(t, rateLimiter.running)
-		require.Equal(t, rateTicker, rateLimiter.rateTicker)
+		require.Equal(t, rateTicker, rateLimiter.ticks)
 		_, bar := <-rateLimiter.worker
 		require.Equal(t, worker, rateLimiter.worker)
 		require.False(t, bar)
@@ -184,7 +180,8 @@ func TestRateLimiter(t *testing.T) {
 		waitGroup := newWaitGroup()
 		callsStack := newCallsRegistry(2)
 
-		rateLimiter := NewRateLimiter(time.Second, 1)
+		manualTicker := tickers.NewManualTicker()
+		rateLimiter := NewRateLimiter(manualTicker, 1)
 
 		rateLimiter.Begin()
 		waitGroup.Initialize("queue", 2)
@@ -214,6 +211,14 @@ func TestRateLimiter(t *testing.T) {
 			waitGroup.Done("queue")
 		})
 
+		go func() {
+			for {
+				manualTicker.Tick()
+
+				time.Sleep(time.Second)
+			}
+		}()
+
 		waitGroup.Wait("queue")
 		rateLimiter.Finish()
 
@@ -224,7 +229,8 @@ func TestRateLimiter(t *testing.T) {
 		waitGroup := newWaitGroup()
 		callsStack := newCallsRegistry(2)
 
-		rateLimiter := NewRateLimiter(time.Second, 1)
+		manualTicker := tickers.NewManualTicker()
+		rateLimiter := NewRateLimiter(manualTicker, 1)
 
 		rateLimiter.Begin()
 		waitGroup.Initialize("queue", 2)
@@ -254,6 +260,14 @@ func TestRateLimiter(t *testing.T) {
 			waitGroup.Done("queue")
 		})
 
+		go func() {
+			for {
+				manualTicker.Tick()
+
+				time.Sleep(time.Second)
+			}
+		}()
+
 		waitGroup.Wait("queue")
 		rateLimiter.Finish()
 
@@ -264,7 +278,8 @@ func TestRateLimiter(t *testing.T) {
 		waitGroup := newWaitGroup()
 		callsStack := newCallsRegistry(3)
 
-		rateLimiter := NewRateLimiter(time.Second, 1)
+		manualTicker := tickers.NewManualTicker()
+		rateLimiter := NewRateLimiter(manualTicker, 1)
 
 		rateLimiter.Begin()
 		waitGroup.Initialize("queue", 3)
@@ -292,6 +307,14 @@ func TestRateLimiter(t *testing.T) {
 			return nil, nil
 		})
 
+		go func() {
+			for {
+				manualTicker.Tick()
+
+				time.Sleep(time.Second)
+			}
+		}()
+
 		waitGroup.Wait("queue")
 		jobsFinished := time.Now()
 		rateLimiter.Finish()
@@ -304,7 +327,8 @@ func TestRateLimiter(t *testing.T) {
 		waitGroup := newWaitGroup()
 		callsStack := newCallsRegistry(3)
 
-		rateLimiter := NewRateLimiter(time.Second, 2)
+		manualTicker := tickers.NewManualTicker()
+		rateLimiter := NewRateLimiter(manualTicker, 2)
 
 		waitGroup.
 			Initialize("batch-1", 2).
@@ -335,6 +359,14 @@ func TestRateLimiter(t *testing.T) {
 			return nil, nil
 		})
 
+		go func() {
+			for {
+				manualTicker.Tick()
+
+				time.Sleep(time.Second)
+			}
+		}()
+
 		waitGroup.Wait("batch-1")
 		callsStack.AssertCurrentCallsStackIs(t, []string{"Job 1: true", "Job 2: true"})
 		waitGroup.Wait("batch-2")
@@ -349,7 +381,8 @@ func TestRateLimiter(t *testing.T) {
 		waitGroup := newWaitGroup()
 		callsStack := newCallsRegistry(3)
 
-		rateLimiter := NewRateLimiter(time.Second, 2)
+		manualTicker := tickers.NewManualTicker()
+		rateLimiter := NewRateLimiter(manualTicker, 2)
 
 		waitGroup.
 			Initialize("batch-1", 2).
@@ -384,6 +417,14 @@ func TestRateLimiter(t *testing.T) {
 			return nil, nil
 		})
 
+		go func() {
+			for {
+				manualTicker.Tick()
+
+				time.Sleep(time.Second)
+			}
+		}()
+
 		waitGroup.Wait("batch-2")
 		callsStack.AssertCurrentCallsStackInOrderIs(t, []string{"Job 2: true", "Job 3: true"})
 		waitGroup.Wait("batch-1")
@@ -395,7 +436,7 @@ func TestRateLimiter(t *testing.T) {
 	})
 }
 
-//TODO: Temporary measure, get rid when refactored to custom reset channel
+// TODO: Temporary measure, get rid when refactored to custom reset channel
 func lastedAtLeast(t time.Time, d time.Duration) bool {
 	return time.Now().Sub(t) >= d
 }
